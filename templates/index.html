@@ -560,13 +560,28 @@
 
         <!-- Results Section -->
         <div class="results-section" id="resultsSection">
-            <div class="results-grid">
+            <!-- Image Results Grid (3 columns) -->
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 20px; margin-bottom: 30px;">
                 <!-- Annotated Image -->
                 <div class="result-card">
                     <div class="card-title">📷 Annotated Image</div>
                     <img id="annotatedImage" class="preview-image" alt="Annotated">
                 </div>
 
+                <!-- Flooding Heatmap -->
+                <div class="result-card">
+                    <div class="card-title">🌊 Flooding Heatmap</div>
+                    <img id="floodingHeatmap" class="preview-image" alt="Flooding Heatmap">
+                </div>
+
+                <!-- People Heatmap -->
+                <div class="result-card">
+                    <div class="card-title">👥 People Heatmap</div>
+                    <img id="peopleHeatmap" class="preview-image" alt="People Heatmap">
+                </div>
+            </div>
+
+            <div class="results-grid">
                 <!-- Detection Summary -->
                 <div class="result-card">
                     <div class="card-title">📊 Detection Summary</div>
@@ -821,6 +836,10 @@
 
             // Display annotated image
             document.getElementById('annotatedImage').src = data.annotated_image;
+
+            // Display heatmaps
+            document.getElementById('floodingHeatmap').src = data.flooding_heatmap;
+            document.getElementById('peopleHeatmap').src = data.people_heatmap;
 
             // Display danger level
             const dangerTexts = ['SAFE', 'CAUTION', 'WARNING', 'DANGER'];

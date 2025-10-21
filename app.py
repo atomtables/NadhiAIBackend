@@ -115,6 +115,104 @@ def calculate_danger_level(detections):
     
     return danger_level
 
+def create_heatmap(image, detections, target_class):
+    """Create a heatmap for a specific class (red = high concentration, green = low)"""
+    img_array = np.array(image)
+    height, width = img_array.shape[:2]
+    
+    # Create base heatmap (all zeros)
+    heatmap = np.zeros((height, width), dtype=np.float32)
+    
+    # Find all masks for the target class
+    target_masks = [det['mask'] for det in detections if det['class'] == target_class]
+    
+    if not target_masks:
+        # No detections - return original image
+        return image
+    
+    # Accumulate masks with distance transform for gradient effect
+    for mask in target_masks:
+        # Convert mask to uint8
+        mask_uint8 = (mask * 255).astype(np.uint8)
+        
+        # Apply distance transform to create gradient from edges
+        dist_transform = cv2.distanceTransform(mask_uint8, cv2.DIST_L2, 5)
+        
+        # Normalize to 0-1 range
+        if dist_transform.max() > 0:
+            dist_transform = dist_transform / dist_transform.max()
+        
+        # Add to heatmap (accumulate)
+        heatmap += dist_transform
+    
+    # Normalize accumulated heatmap to 0-1 range
+    if heatmap.max() > 0:
+        heatmap = heatmap / heatmap.max()
+    
+    # Apply Gaussian blur for smooth gradient
+    heatmap = cv2.GaussianBlur(heatmap, (51, 51), 0)
+    
+    # Normalize again after blur
+    if heatmap.max() > 0:
+        heatmap = heatmap / heatmap.max()
+    
+    # Create colored heatmap (red to green gradient)
+    # Red (high) -> Yellow -> Green (low)
+    heatmap_colored = np.zeros((height, width, 3), dtype=np.uint8)
+    
+    for i in range(height):
+        for j in range(width):
+            intensity = heatmap[i, j]
+            if intensity > 0:
+                # Red to yellow to green gradient
+                # High intensity (close to 1) = Red
+                # Medium intensity (0.5) = Yellow
+                # Low intensity (close to 0) = Green
+                if intensity > 0.5:
+                    # Yellow to red (high intensity)
+                    r = 255
+                    g = int(255 * 2 * (1 - intensity))
+                    b = 0
+                else:
+                    # Green to yellow (low intensity)
+                    r = int(255 * 2 * intensity)
+                    g = 255
+                    b = 0
+                
+                heatmap_colored[i, j] = [r, g, b]
+    
+    # Blend heatmap with original image
+    # Convert both to same type
+    img_array_uint8 = img_array.astype(np.uint8)
+    
+    # Create alpha mask from heatmap intensity
+    alpha = (heatmap * 0.6).astype(np.float32)  # 60% opacity max
+    alpha = np.stack([alpha] * 3, axis=-1)  # Make it 3-channel
+    
+    # Blend: result = original * (1 - alpha) + heatmap * alpha
+    blended = (img_array_uint8 * (1 - alpha) + heatmap_colored * alpha).astype(np.uint8)
+    
+    # Convert to PIL Image
+    heatmap_image = Image.fromarray(blended)
+    
+    # Add title
+    draw = ImageDraw.Draw(heatmap_image)
+    try:
+        font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 24)
+    except:
+        font = ImageFont.load_default()
+    
+    title = f"{target_class.upper()} HEATMAP"
+    bbox_text = draw.textbbox((10, 10), title, font=font)
+    draw.rectangle(
+        [(bbox_text[0] - 5, bbox_text[1] - 5), 
+         (bbox_text[2] + 5, bbox_text[3] + 5)],
+        fill=(0, 0, 0, 200)
+    )
+    draw.text((10, 10), title, fill='white', font=font)
+    
+    return heatmap_image
+
 def create_visualization(image, detections, danger_level):
     """Create annotated image with bounding boxes and masks"""
     img_array = np.array(image)
@@ -474,10 +572,24 @@ def predict():
         # Create visualization
         annotated_image = create_visualization(image, detections, danger_level)
         
+        # Create heatmaps for flooding and people
+        flooding_heatmap = create_heatmap(image, detections, 'flooding')
+        people_heatmap = create_heatmap(image, detections, 'person')
+        
         # Convert annotated image to base64
         buffered = io.BytesIO()
         annotated_image.save(buffered, format="PNG")
         img_str = base64.b64encode(buffered.getvalue()).decode()
+        
+        # Convert flooding heatmap to base64
+        buffered_flood = io.BytesIO()
+        flooding_heatmap.save(buffered_flood, format="PNG")
+        flood_heatmap_str = base64.b64encode(buffered_flood.getvalue()).decode()
+        
+        # Convert people heatmap to base64
+        buffered_people = io.BytesIO()
+        people_heatmap.save(buffered_people, format="PNG")
+        people_heatmap_str = base64.b64encode(buffered_people.getvalue()).decode()
         
         # Prepare JSON response (remove mask arrays)
         response_detections = []
@@ -494,6 +606,8 @@ def predict():
             'danger_level': danger_level,
             'object_count': len(detections),
             'annotated_image': f'data:image/png;base64,{img_str}',
+            'flooding_heatmap': f'data:image/png;base64,{flood_heatmap_str}',
+            'people_heatmap': f'data:image/png;base64,{people_heatmap_str}',
             'has_metadata': has_metadata,
             'elevation_data': elevation_data,
             'summary': {
