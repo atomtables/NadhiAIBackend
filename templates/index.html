@@ -1,0 +1,910 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Instance Segmentation - Flood Detection</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+
+        .workflow-section {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+
+        .workflow-title {
+            font-size: 1.5em;
+            margin-bottom: 20px;
+            color: #667eea;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .workflow-diagram {
+            display: flex;
+            align-items: center;
+            justify-content: space-around;
+            flex-wrap: wrap;
+            gap: 15px;
+            margin: 20px 0;
+        }
+
+        .workflow-step {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            min-width: 150px;
+            text-align: center;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        .workflow-arrow {
+            font-size: 2em;
+            color: #667eea;
+        }
+
+        .upload-section {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+
+        .upload-area {
+            border: 3px dashed #667eea;
+            border-radius: 10px;
+            padding: 40px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .upload-area:hover {
+            background: #f8f9ff;
+            border-color: #764ba2;
+        }
+
+        .upload-area.dragover {
+            background: #f0f0ff;
+            border-color: #764ba2;
+        }
+
+        #imageInput {
+            display: none;
+        }
+
+        .upload-icon {
+            font-size: 3em;
+            margin-bottom: 10px;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 1em;
+            font-weight: 600;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+            transition: transform 0.2s;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(0,0,0,0.3);
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .preview-section {
+            display: none;
+            margin-top: 20px;
+        }
+
+        .preview-image {
+            max-width: 100%;
+            max-height: 600px;
+            width: auto;
+            height: auto;
+            object-fit: contain;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        .results-section {
+            display: none;
+            margin-top: 30px;
+        }
+
+        .results-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin-bottom: 30px;
+        }
+
+        @media (max-width: 968px) {
+            .results-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .result-card {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+
+        .card-title {
+            font-size: 1.3em;
+            margin-bottom: 15px;
+            color: #667eea;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 10px;
+        }
+
+        .danger-indicator {
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            margin-bottom: 20px;
+            font-size: 1.5em;
+            font-weight: bold;
+            color: white;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+        }
+
+        .danger-0 { background: linear-gradient(135deg, #00c853 0%, #64dd17 100%); }
+        .danger-1 { background: linear-gradient(135deg, #ffd600 0%, #ffea00 100%); }
+        .danger-2 { background: linear-gradient(135deg, #ff6f00 0%, #ff9100 100%); }
+        .danger-3 { background: linear-gradient(135deg, #d50000 0%, #ff1744 100%); }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .stat-box {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 2em;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .stat-label {
+            font-size: 0.9em;
+            opacity: 0.9;
+        }
+
+        .detection-list {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .detection-item {
+            background: #f8f9ff;
+            padding: 15px;
+            margin-bottom: 10px;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+
+        .detection-class {
+            font-weight: bold;
+            color: #667eea;
+            font-size: 1.1em;
+            margin-bottom: 5px;
+        }
+
+        .detection-confidence {
+            color: #666;
+            font-size: 0.9em;
+        }
+
+        .detection-bbox {
+            color: #888;
+            font-size: 0.85em;
+            font-family: monospace;
+        }
+
+        .json-output {
+            background: #2d2d2d;
+            color: #f8f8f2;
+            padding: 20px;
+            border-radius: 10px;
+            overflow-x: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+            max-height: 500px;
+            overflow-y: auto;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            margin: 20px 0;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .class-legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            background: #f8f9ff;
+            border-radius: 5px;
+            font-size: 0.9em;
+        }
+
+        .legend-color {
+            width: 20px;
+            height: 20px;
+            border-radius: 3px;
+        }
+
+        .control-section {
+            margin: 20px 0;
+            padding: 20px;
+            background: #f8f9ff;
+            border-radius: 10px;
+        }
+
+        .slider-container {
+            margin: 15px 0;
+        }
+
+        .slider-label {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #667eea;
+        }
+
+        .slider {
+            width: 100%;
+            height: 8px;
+            border-radius: 5px;
+            background: #d3d3d3;
+            outline: none;
+            -webkit-appearance: none;
+        }
+
+        .slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            cursor: pointer;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+
+        .slider::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            cursor: pointer;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+
+        .input-group {
+            margin: 15px 0;
+        }
+
+        .input-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 600;
+            color: #667eea;
+        }
+
+        .input-group input[type="text"] {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #667eea;
+            border-radius: 8px;
+            font-size: 1em;
+            box-sizing: border-box;
+        }
+
+        .input-group input[type="text"]:focus {
+            outline: none;
+            border-color: #764ba2;
+        }
+
+        .location-info {
+            background: white;
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 15px;
+            border-left: 4px solid #667eea;
+        }
+
+        .location-info h4 {
+            margin: 0 0 10px 0;
+            color: #667eea;
+        }
+
+        .location-detail {
+            display: flex;
+            justify-content: space-between;
+            padding: 5px 0;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        .location-detail:last-child {
+            border-bottom: none;
+        }
+
+        .location-label {
+            font-weight: 600;
+            color: #666;
+        }
+
+        .location-value {
+            color: #333;
+        }
+
+        .elevation-highlight {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 10px;
+            text-align: center;
+        }
+
+        .elevation-highlight .value {
+            font-size: 2em;
+            font-weight: bold;
+            margin: 5px 0;
+        }
+
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🌊 Flood Detection & Instance Segmentation</h1>
+            <p>Upload an image to detect objects and assess flood danger levels</p>
+        </div>
+
+        <!-- Workflow Diagram -->
+        <div class="workflow-section">
+            <div class="workflow-title">
+                <span>📊</span>
+                <span>Processing Workflow</span>
+            </div>
+            <div class="workflow-diagram">
+                <div class="workflow-step">
+                    <div>📤</div>
+                    <div>Input Image</div>
+                </div>
+                <div class="workflow-arrow">→</div>
+                <div class="workflow-step">
+                    <div>🤖</div>
+                    <div>Instance<br>Segmentation</div>
+                </div>
+                <div class="workflow-arrow">→</div>
+                <div class="workflow-step">
+                    <div>🎨</div>
+                    <div>Polygon<br>Visualization</div>
+                </div>
+                <div class="workflow-arrow">→</div>
+                <div class="workflow-step">
+                    <div>⚙️</div>
+                    <div>Property<br>Definition</div>
+                </div>
+                <div class="workflow-arrow">→</div>
+                <div class="workflow-step">
+                    <div>📋</div>
+                    <div>Outputs</div>
+                </div>
+            </div>
+            <div class="class-legend">
+                <div class="legend-item">
+                    <div class="legend-color" style="background: rgb(255, 0, 0);"></div>
+                    <span>Car</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: rgb(255, 165, 0);"></div>
+                    <span>Flooding</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: rgb(139, 69, 19);"></div>
+                    <span>Houses</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: rgb(0, 255, 0);"></div>
+                    <span>Person</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: rgb(0, 0, 255);"></div>
+                    <span>Scooter</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Upload Section -->
+        <div class="upload-section">
+            <div class="upload-area" id="uploadArea">
+                <div class="upload-icon">📷</div>
+                <h3>Click or drag image here to upload</h3>
+                <p style="margin-top: 10px; color: #666;">Supports JPG, PNG, HEIC/HEIF</p>
+                <input type="file" id="imageInput" accept="image/*,image/heic,image/heif,.heic,.heif">
+                <button class="btn" style="margin-top: 20px;" onclick="document.getElementById('imageInput').click()">
+                    Choose Image
+                </button>
+            </div>
+
+            <div class="preview-section" id="previewSection">
+                <h3 style="margin-bottom: 10px;">Selected Image:</h3>
+                <img id="previewImage" class="preview-image" alt="Preview">
+                
+                <!-- Location Input (shown only if no GPS metadata) -->
+                <div class="control-section hidden" id="locationSection">
+                    <div class="input-group">
+                        <label for="locationInput">📍 Image Location (No GPS metadata found)</label>
+                        <input type="text" id="locationInput" placeholder="Enter address or location (e.g., '123 Main St, New York, NY')">
+                        <p style="font-size: 0.9em; color: #666; margin-top: 5px;">
+                            This will be used to calculate ground elevation
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Confidence Slider -->
+                <div class="control-section">
+                    <div class="slider-container">
+                        <div class="slider-label">
+                            <span>Confidence Threshold</span>
+                            <span id="confidenceValue">0.25</span>
+                        </div>
+                        <input type="range" min="0.1" max="0.9" value="0.25" step="0.05" class="slider" id="confidenceSlider">
+                        <p style="font-size: 0.9em; color: #666; margin-top: 5px;">
+                            Adjust to filter detections by confidence level
+                        </p>
+                    </div>
+                </div>
+
+                <button class="btn" id="analyzeBtn">
+                    Analyze Image
+                </button>
+            </div>
+
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                <p style="margin-top: 15px; font-weight: bold; color: #667eea;">Processing...</p>
+            </div>
+        </div>
+
+        <!-- Results Section -->
+        <div class="results-section" id="resultsSection">
+            <div class="results-grid">
+                <!-- Annotated Image -->
+                <div class="result-card">
+                    <div class="card-title">📷 Annotated Image</div>
+                    <img id="annotatedImage" class="preview-image" alt="Annotated">
+                </div>
+
+                <!-- Detection Summary -->
+                <div class="result-card">
+                    <div class="card-title">📊 Detection Summary</div>
+                    
+                    <div id="dangerIndicator" class="danger-indicator">
+                        <!-- Filled by JavaScript -->
+                    </div>
+
+                    <!-- Elevation Data -->
+                    <div id="elevationSection" class="hidden">
+                        <div class="location-info">
+                            <h4>📍 Location & Elevation Data</h4>
+                            <div id="elevationDetails"></div>
+                        </div>
+                    </div>
+
+                    <div class="stats-grid">
+                        <div class="stat-box">
+                            <div class="stat-value" id="totalObjects">0</div>
+                            <div class="stat-label">Total Objects</div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="stat-value" id="uniqueClasses">0</div>
+                            <div class="stat-label">Unique Classes</div>
+                        </div>
+                    </div>
+
+                    <h4 style="margin: 20px 0 10px 0;">Detected Objects:</h4>
+                    <div class="detection-list" id="detectionList">
+                        <!-- Filled by JavaScript -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- JSON Output -->
+            <div class="result-card">
+                <div class="card-title">💾 JSON Data Output</div>
+                <pre class="json-output" id="jsonOutput"></pre>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let selectedFile = null;
+        let hasGPSMetadata = false;
+
+        // Upload area interactions
+        const uploadArea = document.getElementById('uploadArea');
+        const imageInput = document.getElementById('imageInput');
+        const previewSection = document.getElementById('previewSection');
+        const previewImage = document.getElementById('previewImage');
+        const analyzeBtn = document.getElementById('analyzeBtn');
+        const loading = document.getElementById('loading');
+        const resultsSection = document.getElementById('resultsSection');
+        const locationSection = document.getElementById('locationSection');
+        const locationInput = document.getElementById('locationInput');
+        const confidenceSlider = document.getElementById('confidenceSlider');
+        const confidenceValue = document.getElementById('confidenceValue');
+
+        // Confidence slider
+        confidenceSlider.addEventListener('input', (e) => {
+            confidenceValue.textContent = e.target.value;
+            
+            // If image is already analyzed, re-analyze with new confidence
+            if (selectedFile && resultsSection.style.display === 'block') {
+                analyzeImage();
+            }
+        });
+
+        uploadArea.addEventListener('click', (e) => {
+            if (e.target !== uploadArea && e.target.tagName !== 'H3' && e.target.tagName !== 'P' && e.target.className !== 'upload-icon') {
+                return;
+            }
+            imageInput.click();
+        });
+
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragover');
+        });
+
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('dragover');
+        });
+
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                handleFileSelect(files[0]);
+            }
+        });
+
+        imageInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handleFileSelect(e.target.files[0]);
+            }
+        });
+
+        async function handleFileSelect(file) {
+            // Accept image/* or HEIC/HEIF files
+            const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/heic', 'image/heif', 'image/webp'];
+            const fileExtension = file.name.toLowerCase().split('.').pop();
+            const isValidExtension = ['jpg', 'jpeg', 'png', 'heic', 'heif', 'webp'].includes(fileExtension);
+            
+            if (!file.type.startsWith('image/') && !isValidExtension) {
+                alert('Please select an image file (JPG, PNG, HEIC, HEIF)');
+                return;
+            }
+
+            selectedFile = file;
+            
+            // Check if it's a HEIC/HEIF file
+            if (fileExtension === 'heic' || fileExtension === 'heif') {
+                // Show loading while converting
+                loading.style.display = 'block';
+                loading.querySelector('p').textContent = 'Converting HEIC image...';
+                
+                try {
+                    // Send to server to convert and extract metadata
+                    const formData = new FormData();
+                    formData.append('image', file);
+                    
+                    const response = await fetch('/convert-heic', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    
+                    if (response.ok) {
+                        const data = await response.json();
+                        
+                        // Set preview image
+                        previewImage.src = data.preview;
+                        previewSection.style.display = 'block';
+                        resultsSection.style.display = 'none';
+                        
+                        // Handle GPS metadata
+                        if (data.has_gps) {
+                            locationSection.classList.add('hidden');
+                            console.log('GPS data found in HEIC:', data.gps_data);
+                        } else {
+                            locationSection.classList.remove('hidden');
+                        }
+                    } else {
+                        throw new Error('Failed to convert HEIC');
+                    }
+                } catch (error) {
+                    alert('Error processing HEIC file: ' + error.message);
+                    console.error(error);
+                } finally {
+                    loading.style.display = 'none';
+                    loading.querySelector('p').textContent = 'Processing...';
+                }
+            } else {
+                // Regular image file
+                const reader = new FileReader();
+                
+                reader.onload = (e) => {
+                    previewImage.src = e.target.result;
+                    previewSection.style.display = 'block';
+                    resultsSection.style.display = 'none';
+                    
+                    // Check if image has EXIF data
+                    checkImageMetadata(file);
+                };
+                
+                reader.readAsDataURL(file);
+            }
+        }
+
+        function checkImageMetadata(file) {
+            // We'll do a quick check on the client side, but server will do the real check
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const view = new DataView(e.target.result);
+                
+                // Check for EXIF marker (0xFFE1)
+                if (view.getUint16(0, false) === 0xFFD8) {
+                    let offset = 2;
+                    while (offset < view.byteLength) {
+                        const marker = view.getUint16(offset, false);
+                        if (marker === 0xFFE1) {
+                            // Has EXIF data, but we don't know if it has GPS
+                            // Show location input, server will hide it if GPS exists
+                            locationSection.classList.remove('hidden');
+                            return;
+                        }
+                        offset += 2 + view.getUint16(offset + 2, false);
+                    }
+                }
+                
+                // No EXIF, definitely show location input
+                locationSection.classList.remove('hidden');
+            };
+            reader.readAsArrayBuffer(file.slice(0, 64 * 1024)); // Read first 64KB
+        }
+
+        analyzeBtn.addEventListener('click', analyzeImage);
+
+        async function analyzeImage() {
+            if (!selectedFile) {
+                alert('Please select an image first');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('image', selectedFile);
+            formData.append('confidence', confidenceSlider.value);
+            
+            // Add location if provided
+            if (locationInput.value.trim()) {
+                formData.append('location', locationInput.value.trim());
+            }
+
+            loading.style.display = 'block';
+            resultsSection.style.display = 'none';
+            analyzeBtn.disabled = true;
+
+            try {
+                const response = await fetch('/predict', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    throw new Error('Analysis failed');
+                }
+
+                const data = await response.json();
+                displayResults(data);
+                
+            } catch (error) {
+                alert('Error analyzing image: ' + error.message);
+                console.error(error);
+            } finally {
+                loading.style.display = 'none';
+                analyzeBtn.disabled = false;
+            }
+        }
+
+        function displayResults(data) {
+            // Show results section
+            resultsSection.style.display = 'block';
+            resultsSection.scrollIntoView({ behavior: 'smooth' });
+
+            // Update location section visibility
+            if (data.has_metadata) {
+                locationSection.classList.add('hidden');
+            }
+
+            // Display annotated image
+            document.getElementById('annotatedImage').src = data.annotated_image;
+
+            // Display danger level
+            const dangerTexts = ['SAFE', 'CAUTION', 'WARNING', 'DANGER'];
+            const dangerIndicator = document.getElementById('dangerIndicator');
+            dangerIndicator.className = `danger-indicator danger-${data.danger_level}`;
+            dangerIndicator.textContent = `DANGER LEVEL: ${data.danger_level} - ${dangerTexts[data.danger_level]}`;
+
+            // Display elevation data
+            const elevationSection = document.getElementById('elevationSection');
+            const elevationDetails = document.getElementById('elevationDetails');
+            
+            if (data.elevation_data) {
+                elevationSection.classList.remove('hidden');
+                let html = '';
+                
+                if (data.elevation_data.has_metadata) {
+                    html = `
+                        <div class="location-detail">
+                            <span class="location-label">📍 Coordinates:</span>
+                            <span class="location-value">${data.elevation_data.latitude.toFixed(6)}, ${data.elevation_data.longitude.toFixed(6)}</span>
+                        </div>
+                        <div class="location-detail">
+                            <span class="location-label">🏔️ Ground Elevation:</span>
+                            <span class="location-value">${data.elevation_data.ground_elevation} m</span>
+                        </div>
+                        <div class="location-detail">
+                            <span class="location-label">📷 Camera Altitude:</span>
+                            <span class="location-value">${data.elevation_data.camera_altitude} m</span>
+                        </div>
+                        <div class="elevation-highlight">
+                            <div>Height Above Ground</div>
+                            <div class="value">${data.elevation_data.height_above_ground} m</div>
+                            <div style="font-size: 0.9em; opacity: 0.9;">
+                                (${(data.elevation_data.height_above_ground * 3.28084).toFixed(2)} feet)
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    html = `
+                        <div class="location-detail">
+                            <span class="location-label">📍 Location:</span>
+                            <span class="location-value">${data.elevation_data.location_name}</span>
+                        </div>
+                        <div class="location-detail">
+                            <span class="location-label">🗺️ Coordinates:</span>
+                            <span class="location-value">${data.elevation_data.latitude.toFixed(6)}, ${data.elevation_data.longitude.toFixed(6)}</span>
+                        </div>
+                        <div class="elevation-highlight">
+                            <div>Ground Elevation</div>
+                            <div class="value">${data.elevation_data.ground_elevation} m</div>
+                            <div style="font-size: 0.9em; opacity: 0.9;">
+                                (${(data.elevation_data.ground_elevation * 3.28084).toFixed(2)} feet above sea level)
+                            </div>
+                        </div>
+                    `;
+                }
+                
+                elevationDetails.innerHTML = html;
+            } else {
+                elevationSection.classList.add('hidden');
+            }
+
+            // Display stats
+            document.getElementById('totalObjects').textContent = data.object_count;
+            document.getElementById('uniqueClasses').textContent = data.summary.classes_detected.length;
+
+            // Display detection list
+            const detectionList = document.getElementById('detectionList');
+            detectionList.innerHTML = '';
+            
+            data.detections.forEach((det, index) => {
+                const item = document.createElement('div');
+                item.className = 'detection-item';
+                item.innerHTML = `
+                    <div class="detection-class">${index + 1}. ${det.class}</div>
+                    <div class="detection-confidence">Confidence: ${(det.confidence * 100).toFixed(1)}%</div>
+                    <div class="detection-bbox">BBox: [${det.bbox.join(', ')}]</div>
+                `;
+                detectionList.appendChild(item);
+            });
+
+            // Display JSON
+            document.getElementById('jsonOutput').textContent = JSON.stringify(data, null, 2);
+        }
+    </script>
+</body>
+</html>
