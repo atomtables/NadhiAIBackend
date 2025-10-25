@@ -18,6 +18,15 @@ register_heif_opener()
 app = Flask(__name__)
 CORS(app)
 
+# SUPPORTED IMAGE FORMATS & METADATA:
+# - JPEG/JPG: Standard format from Google Pixel, Android phones, digital cameras
+#   * Supports EXIF metadata including GPS coordinates and altitude
+#   * PIL's getexif() extracts GPS data from tag 34853 (GPSInfo IFD)
+# - HEIC/HEIF: Apple's format from iPhones
+#   * Requires pillow-heif for reading
+#   * Also supports EXIF/GPS metadata via same method
+# - PNG, WebP: Also supported but typically don't contain GPS metadata
+
 # Class labels
 CLASS_LABELS = [
     'car', 'flooding', 'house_0', 'house_1', 'house_2', 'house_3',
@@ -116,7 +125,7 @@ def calculate_danger_level(detections):
     return danger_level
 
 def create_heatmap(image, detections, target_class):
-    """Create a heatmap for a specific class (red = high concentration, green = low)"""
+    """Create a heatmap for a specific class (red = flooded areas, fading to green)"""
     img_array = np.array(image)
     height, width = img_array.shape[:2]
     
@@ -130,31 +139,32 @@ def create_heatmap(image, detections, target_class):
         # No detections - return original image
         return image
     
-    # Accumulate masks with distance transform for gradient effect
+    # Combine all masks into one
+    combined_mask = np.zeros((height, width), dtype=np.uint8)
     for mask in target_masks:
-        # Convert mask to uint8
-        mask_uint8 = (mask * 255).astype(np.uint8)
-        
-        # Apply distance transform to create gradient from edges
-        dist_transform = cv2.distanceTransform(mask_uint8, cv2.DIST_L2, 5)
-        
-        # Normalize to 0-1 range
-        if dist_transform.max() > 0:
-            dist_transform = dist_transform / dist_transform.max()
-        
-        # Add to heatmap (accumulate)
-        heatmap += dist_transform
+        combined_mask = np.maximum(combined_mask, (mask * 255).astype(np.uint8))
     
-    # Normalize accumulated heatmap to 0-1 range
-    if heatmap.max() > 0:
-        heatmap = heatmap / heatmap.max()
+    # Invert the mask for distance transform (we want distance FROM the flooded area)
+    inverted_mask = cv2.bitwise_not(combined_mask)
+    
+    # Apply distance transform to create gradient OUTSIDE the flooded area
+    dist_transform = cv2.distanceTransform(inverted_mask, cv2.DIST_L2, 5)
+    
+    # Create heatmap: inside mask = 1.0 (red), outside = based on distance
+    heatmap = np.where(combined_mask > 0, 1.0, 0.0).astype(np.float32)
+    
+    # For areas outside the mask, create gradient based on distance
+    max_distance = 100  # pixels from edge to fade to green
+    outside_gradient = np.clip(1.0 - (dist_transform / max_distance), 0, 1)
+    
+    # Combine: inside mask = 1.0, outside = gradient
+    heatmap = np.where(combined_mask > 0, 1.0, outside_gradient)
     
     # Apply Gaussian blur for smooth gradient
-    heatmap = cv2.GaussianBlur(heatmap, (51, 51), 0)
+    heatmap = cv2.GaussianBlur(heatmap, (31, 31), 0)
     
-    # Normalize again after blur
-    if heatmap.max() > 0:
-        heatmap = heatmap / heatmap.max()
+    # Ensure flooded areas stay at maximum intensity
+    heatmap = np.where(combined_mask > 0, 1.0, heatmap)
     
     # Create colored heatmap (red to green gradient)
     # Red (high) -> Yellow -> Green (low)
@@ -309,24 +319,31 @@ def create_visualization(image, detections, danger_level):
     return img_copy
 
 def get_gps_info(image):
-    """Extract GPS coordinates and altitude from image EXIF data"""
+    """Extract GPS coordinates and altitude from image EXIF data
+    Works with JPEG/JPG (including Google Pixel/Android) and HEIC/HEIF formats"""
     try:
-        # Try standard PIL getexif first
+        # Get EXIF data - works for JPEG, JPG, HEIC, HEIF
+        # Google Pixel and Android phones use standard EXIF format in JPEG
         exif_data = image.getexif()
         
         if not exif_data:
+            print("No EXIF data found in image")
             return None
         
         gps_info = {}
         
-        # Look for GPSInfo tag (tag 34853)
+        # Look for GPSInfo tag (tag 34853) - standard across all formats
+        # Google Pixel JPEGs store GPS data here
         if 34853 in exif_data:
             gps_ifd = exif_data.get_ifd(34853)
+            print(f"Found GPS IFD with {len(gps_ifd)} tags")
             for gps_tag, value in gps_ifd.items():
                 sub_decoded = GPSTAGS.get(gps_tag, gps_tag)
                 gps_info[sub_decoded] = value
+                print(f"  GPS tag {sub_decoded}: {value}")
         
         if not gps_info:
+            print("No GPS tags found in EXIF data")
             return None
         
         # Extract latitude
@@ -334,32 +351,43 @@ def get_gps_info(image):
         if 'GPSLatitude' in gps_info and 'GPSLatitudeRef' in gps_info:
             lat = gps_info['GPSLatitude']
             lat_ref = gps_info['GPSLatitudeRef']
+            # Convert from degrees, minutes, seconds to decimal degrees
+            # Works for Google Pixel, iPhone, and all standard EXIF formats
             lat = float(lat[0]) + float(lat[1])/60 + float(lat[2])/3600
             if lat_ref == 'S':
                 lat = -lat
+            print(f"Latitude: {lat}° ({lat_ref})")
         
         # Extract longitude
         lon = None
         if 'GPSLongitude' in gps_info and 'GPSLongitudeRef' in gps_info:
             lon = gps_info['GPSLongitude']
             lon_ref = gps_info['GPSLongitudeRef']
+            # Convert from degrees, minutes, seconds to decimal degrees
             lon = float(lon[0]) + float(lon[1])/60 + float(lon[2])/3600
             if lon_ref == 'W':
                 lon = -lon
+            print(f"Longitude: {lon}° ({lon_ref})")
         
         # Extract altitude
+        # Google Pixel and Android phones typically include altitude in GPS data
         altitude = None
         if 'GPSAltitude' in gps_info:
             altitude = float(gps_info['GPSAltitude'])
             if 'GPSAltitudeRef' in gps_info and gps_info['GPSAltitudeRef'] == 1:
                 altitude = -altitude
+            print(f"Altitude: {altitude} m")
         
         if lat is not None and lon is not None:
+            print(f"✓ GPS data successfully extracted from image")
             return {
                 'latitude': lat,
                 'longitude': lon,
                 'altitude': altitude
             }
+        else:
+            print("GPS coordinates incomplete (missing lat or lon)")
+            return None
         
     except Exception as e:
         print(f"Error extracting GPS info: {e}")
@@ -475,10 +503,12 @@ def predict():
         file.stream.seek(0)  # Reset file pointer
         image = Image.open(file.stream).convert('RGB')
         
-        # Extract GPS info from image
+        # Extract GPS info from image (works for JPEG from Google Pixel/Android, HEIC from iPhone, etc.)
+        print(f"\n{'='*50}")
         print(f"Processing image: {file.filename}")
         print(f"Image format: {image.format}")
         print(f"Image size: {image.size}")
+        print(f"{'='*50}")
         
         gps_data = get_gps_info(image)
         has_metadata = gps_data is not None

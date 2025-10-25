@@ -511,7 +511,7 @@
             <div class="upload-area" id="uploadArea">
                 <div class="upload-icon">📷</div>
                 <h3>Click or drag image here to upload</h3>
-                <p style="margin-top: 10px; color: #666;">Supports JPG, PNG, HEIC/HEIF</p>
+                <p style="margin-top: 10px; color: #666;">Supports JPG/JPEG (Google Pixel, Android, iPhone), PNG, HEIC/HEIF</p>
                 <input type="file" id="imageInput" accept="image/*,image/heic,image/heif,.heic,.heif">
                 <button class="btn" style="margin-top: 20px;" onclick="document.getElementById('imageInput').click()">
                     Choose Image
@@ -684,17 +684,19 @@
         });
 
         async function handleFileSelect(file) {
-            // Accept image/* or HEIC/HEIF files
+            // Accept JPEG/JPG (including Google Pixel/Android), PNG, HEIC/HEIF, WebP
             const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/heic', 'image/heif', 'image/webp'];
             const fileExtension = file.name.toLowerCase().split('.').pop();
             const isValidExtension = ['jpg', 'jpeg', 'png', 'heic', 'heif', 'webp'].includes(fileExtension);
             
             if (!file.type.startsWith('image/') && !isValidExtension) {
-                alert('Please select an image file (JPG, PNG, HEIC, HEIF)');
+                alert('Please select an image file (JPG, JPEG, PNG, HEIC, HEIF)');
                 return;
             }
 
             selectedFile = file;
+            
+            console.log(`File selected: ${file.name} (${fileExtension})`);
             
             // Check if it's a HEIC/HEIF file
             if (fileExtension === 'heic' || fileExtension === 'heif') {
@@ -738,7 +740,8 @@
                     loading.querySelector('p').textContent = 'Processing...';
                 }
             } else {
-                // Regular image file
+                // Regular image file (JPEG/JPG from Google Pixel/Android, PNG, WebP)
+                console.log('Processing standard image format (JPEG/PNG/WebP)');
                 const reader = new FileReader();
                 
                 reader.onload = (e) => {
@@ -746,8 +749,11 @@
                     previewSection.style.display = 'block';
                     resultsSection.style.display = 'none';
                     
-                    // Check if image has EXIF data
-                    checkImageMetadata(file);
+                    // Location input will be shown initially
+                    // Server will hide it if GPS metadata is found in the JPEG/JPG
+                    locationSection.classList.remove('hidden');
+                    
+                    console.log('Image preview loaded. GPS data will be checked on server.');
                 };
                 
                 reader.readAsDataURL(file);
