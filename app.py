@@ -498,6 +498,10 @@ def predict():
     confidence_threshold = float(request.form.get('confidence', 0.1))
     location_input = request.form.get('location', None)
     
+    # Support for direct coordinate input (latitude, longitude)
+    latitude_input = request.form.get('latitude', None)
+    longitude_input = request.form.get('longitude', None)
+    
     try:
         # Load image
         file.stream.seek(0)  # Reset file pointer
@@ -508,6 +512,10 @@ def predict():
         print(f"Processing image: {file.filename}")
         print(f"Image format: {image.format}")
         print(f"Image size: {image.size}")
+        if latitude_input and longitude_input:
+            print(f"Direct coordinates provided: lat={latitude_input}, lon={longitude_input}")
+        elif location_input:
+            print(f"Location/address provided: {location_input}")
         print(f"{'='*50}")
         
         gps_data = get_gps_info(image)
@@ -523,24 +531,61 @@ def predict():
         if gps_data:
             # Image has GPS metadata
             lat, lon = gps_data['latitude'], gps_data['longitude']
+            print(f"Using GPS from image: lat={lat}, lon={lon}")
             camera_altitude = gps_data.get('altitude')
             ground_elevation = get_elevation_from_coords(lat, lon)
             
-            if ground_elevation is not None and camera_altitude is not None:
-                height_above_ground = camera_altitude - ground_elevation
+            # Always include camera altitude if available from HEIC/JPEG metadata
+            if camera_altitude is not None:
                 elevation_data = {
                     'has_metadata': True,
                     'latitude': lat,
                     'longitude': lon,
-                    'camera_altitude': round(camera_altitude, 2),
-                    'ground_elevation': round(ground_elevation, 2),
-                    'height_above_ground': round(height_above_ground, 2)
+                    'camera_altitude': round(camera_altitude, 2)
                 }
+                
+                if ground_elevation is not None:
+                    height_above_ground = camera_altitude - ground_elevation
+                    elevation_data['ground_elevation'] = round(ground_elevation, 2)
+                    elevation_data['height_above_ground'] = round(height_above_ground, 2)
+                else:
+                    print(f"Could not fetch ground elevation, but camera altitude available: {camera_altitude} m")
+            elif ground_elevation is not None:
+                # No camera altitude but we have ground elevation
+                elevation_data = {
+                    'has_metadata': True,
+                    'latitude': lat,
+                    'longitude': lon,
+                    'ground_elevation': round(ground_elevation, 2)
+                }
+        elif latitude_input and longitude_input:
+            # User provided coordinates directly
+            try:
+                lat = float(latitude_input)
+                lon = float(longitude_input)
+                print(f"Using provided coordinates: lat={lat}, lon={lon}")
+                ground_elevation = get_elevation_from_coords(lat, lon)
+                
+                if ground_elevation is not None:
+                    elevation_data = {
+                        'has_metadata': False,
+                        'latitude': lat,
+                        'longitude': lon,
+                        'ground_elevation': round(ground_elevation, 2),
+                        'location_name': f"Coordinates: {lat}, {lon}"
+                    }
+                    print(f"Ground elevation at coordinates: {ground_elevation} m")
+                else:
+                    print(f"Could not fetch elevation for coordinates: {lat}, {lon}")
+            except ValueError as e:
+                print(f"Invalid coordinate format: lat={latitude_input}, lon={longitude_input}, error={e}")
         elif location_input:
-            # User provided location
+            # User provided location/address - geocode it
+            print(f"Geocoding address: {location_input}")
             coords = geocode_address(location_input)
             if coords:
                 lat, lon = coords['latitude'], coords['longitude']
+                print(f"Geocoded to: lat={lat}, lon={lon}")
                 ground_elevation = get_elevation_from_coords(lat, lon)
                 
                 if ground_elevation is not None:
@@ -551,6 +596,8 @@ def predict():
                         'ground_elevation': round(ground_elevation, 2),
                         'location_name': location_input
                     }
+            else:
+                print(f"Failed to geocode address: {location_input}")
         
         img_array = np.array(image)
         

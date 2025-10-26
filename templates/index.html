@@ -862,27 +862,52 @@
                 let html = '';
                 
                 if (data.elevation_data.has_metadata) {
+                    // Image has GPS metadata
                     html = `
                         <div class="location-detail">
                             <span class="location-label">📍 Coordinates:</span>
                             <span class="location-value">${data.elevation_data.latitude.toFixed(6)}, ${data.elevation_data.longitude.toFixed(6)}</span>
-                        </div>
+                        </div>`;
+                    
+                    // Add ground elevation if available
+                    if (data.elevation_data.ground_elevation !== undefined) {
+                        html += `
                         <div class="location-detail">
                             <span class="location-label">🏔️ Ground Elevation:</span>
                             <span class="location-value">${data.elevation_data.ground_elevation} m</span>
-                        </div>
+                        </div>`;
+                    }
+                    
+                    // Add camera altitude if available (from HEIC/JPEG metadata)
+                    if (data.elevation_data.camera_altitude !== undefined) {
+                        html += `
                         <div class="location-detail">
                             <span class="location-label">📷 Camera Altitude:</span>
-                            <span class="location-value">${data.elevation_data.camera_altitude} m</span>
-                        </div>
+                            <span class="location-value">${data.elevation_data.camera_altitude} m (${(data.elevation_data.camera_altitude * 3.28084).toFixed(2)} ft)</span>
+                        </div>`;
+                    }
+                    
+                    // Add height above ground if both are available
+                    if (data.elevation_data.height_above_ground !== undefined) {
+                        html += `
                         <div class="elevation-highlight">
                             <div>Height Above Ground</div>
                             <div class="value">${data.elevation_data.height_above_ground} m</div>
                             <div style="font-size: 0.9em; opacity: 0.9;">
                                 (${(data.elevation_data.height_above_ground * 3.28084).toFixed(2)} feet)
                             </div>
-                        </div>
-                    `;
+                        </div>`;
+                    } else if (data.elevation_data.camera_altitude !== undefined) {
+                        // Only camera altitude available
+                        html += `
+                        <div class="elevation-highlight">
+                            <div>Camera Altitude (from photo metadata)</div>
+                            <div class="value">${data.elevation_data.camera_altitude} m</div>
+                            <div style="font-size: 0.9em; opacity: 0.9;">
+                                (${(data.elevation_data.camera_altitude * 3.28084).toFixed(2)} feet above sea level)
+                            </div>
+                        </div>`;
+                    }
                 } else {
                     html = `
                         <div class="location-detail">
