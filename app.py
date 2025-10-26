@@ -495,7 +495,7 @@ def predict():
         return jsonify({'error': 'Model not loaded'}), 500
     
     file = request.files['image']
-    confidence_threshold = float(request.form.get('confidence', 0.25))
+    confidence_threshold = float(request.form.get('confidence', 0.1))
     location_input = request.form.get('location', None)
     
     try:
